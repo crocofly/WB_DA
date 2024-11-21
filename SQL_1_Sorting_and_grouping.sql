@@ -121,8 +121,9 @@ with all_sellers as ( 							-- определяем CTE
 select seller_id, 
     floor(date_reg::numeric / 30::numeric) 		-- считаем количество полных месяцев
     as month_from_registration, 
-	max(max_del) over() - min(min_del) 			-- ищем самую быструю и самую долгую доставку по всем 
-		over() as max_delivery_difference		-- селлерам категории poor
+	(select max(max_del) from all_sellers) - 	-- ищем разницу между максимальным и  
+	(select min(min_del) from all_sellers)		-- минимальным сроком доставки
+	as max_delivery_difference					-- товаров селлеров категории poor
 from all_sellers
 where 1=1
     and total_categ > 1							-- фильтр на количество категорий
@@ -132,26 +133,34 @@ order by seller_id
 	
 
 -- Часть 2, задание 3
-
-with sellers_cat as (							-- определяем CTE
-	select seller_id , 
-		category as cat, 
-		count(category) 						-- Считаем количество категорий селлера
-			over(partition by 
-			seller_id) as cn_cat, 
-		sum(revenue) 							-- Считаем сумму выручки селлера
-			over(partition by 
-			seller_id) as sum_sel
-	from sellers s
+with sellers_reg as(						-- Находим первичную дату регистрации продавца
+	select seller_id, 
+	count(category) as cn_cat,				-- Считаем количество категорий селлера
+	min(date_reg) as date_reg,
+	sum(revenue) as total_revenue			-- Считаем сумму выручки селлера
+	from sellers s 
+	group by seller_id
+),
+true_sellers as (							-- определяем CTE для отбора нужных селлеров
+	select  distinct seller_id as seller_id
+	from sellers_reg s
 	where date_reg >= '2022-01-01'::date		-- Селлер зарегистрирован не ранее 2022 года
-	group by seller_id, cat, revenue 
-	order by seller_id, cat						-- Сортировка категорий по селлерам в алфавитном порядке
+		and cn_cat = 2							-- Количество категорий = 2 штуки
+		and total_revenue >= 75000				-- Сумма выручки более 75 000
+),
+sellers_cat as (								-- Отбираем категории найденных селлеров и сортируем в алфавитном порядке
+	select ts.seller_id, category
+	from true_sellers ts
+	left join (									-- присоединяем таблицу с категориями, отбираем только нужных селлеров
+				select seller_id, category
+				from sellers s 
+				group by 1, 2
+			) as s1
+	on s1.seller_id = ts.seller_id
+	order by 1, 2
 )
 select seller_id, 
-	string_agg (cat, ' - ') as category_pair	-- Объединение категорий в строку
+	string_agg (category, ' - ') as category_pair	-- Объединение категорий в строку
 from sellers_cat
-where 1=1
-	and cn_cat = 2								-- Количество категорий = 2
-	and sum_sel > 75000							-- Сумма выручки более 75 000
 group by seller_id
-;
+; 												-- Итоговое количество селлеров в датасете = 0
